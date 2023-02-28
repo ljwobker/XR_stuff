@@ -2,7 +2,8 @@
 
 # lwobker@cisco.com    
 # usage:  copy script into shell of running XR machine
-# to execute, just do "nohup python3 ./charter_drops.py -n 60 -t 60 &> npudrops.log &"
+# to execute, just do "nohup python3 ./drop_script.py -n 60 -t 60 &> npudrops.log &"
+# this will run it 60 times, once every 60 seconds, (i.e. for 1 hour) 
 
 
 import argparse
