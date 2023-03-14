@@ -66,42 +66,49 @@ def runCommands(cmdTable) -> dict:
     return procOutput
 
 
-runOnceCmdTable = {}
-loopCmdTable = {
-    "timestamp": ["date", "+%s"],           # XR: "show clock"
+runOnceCmdTable = {
     "showVersion": ["show_version"],        # XR: "show version"
     "showIntf": ["show_interface", "-a"],   # XR: "show interface"
     "showInv": ["show_inventory", "-e"],        # XR: show inventory"
     "etcHostname": ["cat", "/etc/hostname"],        # hostname (no direct XR equiv.)
     "showNpuSlice": ["show_slicemgr", "-I", "0xff", "-n", "A"],   # XR: show contr npu slice info...
+}
+
+# will run these each time
+loopCmdTable = {    
+    "timestamp": ["date", "+%s"],           # XR: "show clock"
     "showPolMapInt": ["qos_ma_show_stats", "-i", "Bundle-Ether21", "-p", "0x1", "-q", "0x2",]
 }
 
 for card in range(18):
     for npu_inst in range(4):
-        # this monster is the shell command to run "show controller npu stats" to get all the drops
-        # iterated over each possible LC / NPU combination.  (note: nonexistent LC/NPUs safely return)
-        # create commands to clear the counters (we run this once at the beginning)
+            # create commands to clear the counters (we run this once at the beginning)
         clrNpuCmd = ["npd_npu_driver_clear", "-c", "s", "-i", f"0x{str(npu_inst)}", "-n", f"{str(256*card)}"]
         runOnceCmdTable[f"clear_command_{card}_{npu_inst}"] = clrNpuCmd
-        # build the show command for each (LC, NPU) tuple
-        cmdval = ["ofa_npu_stats_show", "-v", "a", "-t", "e", "-p", "0xffffffff", "-s", "0x0", "-d", "A",]
-        cmdval = cmdval + ["-i", f"0x{str(npu_inst)}", "-n", f"{str(256*card)}"]
-        loopCmdTable[f"npu_drops{card}_{npu_inst}"] = cmdval
-        cmdval = ["npu_driver_show", "-c", "script read_dvoq_qsm", "-u", f"0x{npu_inst}", "-n", f"{str(256*card)}",]
-        loopCmdTable[f"dvoq_check{card}_{npu_inst}"] = cmdval
+            # build the show command for each (LC, NPU) tuple
+        npuStats = ["ofa_npu_stats_show", "-v", "a", "-t", "e", "-p", "0xffffffff", "-s", "0x0", "-d", "A",]
+        npuStats.append(["-i", f"0x{str(npu_inst)}", "-n", f"{str(256*card)}"])
+        read_dvoq = ["npu_driver_show", "-c", "script read_dvoq_qsm", "-u", f"0x{npu_inst}", "-n", f"{str(256*card)}",]
+        oq_debug = ["npu_driver_show", "-c", "script sf_oq_debug_full true", "-u", f"0x{npu_inst}", "-n", f"{str(256*card)}",]
+        summ_ctrs = ["npu_driver_show", "-c", "script print_get_counters true", "-u", f"0x{npu_inst}", "-n", f"{str(256*card)}",]
+            # add them to the list of commands to loop...
+        loopCmdTable[f"npu_drops{card}_{npu_inst}"] = npuStats
+        loopCmdTable[f"dvoq_check{card}_{npu_inst}"] = read_dvoq
+        loopCmdTable[f"oq_debug_full{card}_{npu_inst}"] = oq_debug
+        loopCmdTable[f"summ_ctrs{card}_{npu_inst}"] = summ_ctrs
+
 
 
 
 if __name__ == '__main__':
     os.nice(20)
     args = getParser()
-    ClearCommandOutput = runCommands(runOnceCmdTable)   # run once, clear counters...
+    ClearCommandOutput = runCommands(runOnceCmdTable)   # run once
     run_counter = 0
     finished = False
-    while not finished:
+    while not finished:         # run main loop of commands
         run_counter += 1
-        commandOutput = runCommands(loopCmdTable)       # run commands
+        commandOutput = runCommands(loopCmdTable)       
         output_fullpath = getOutputfile(args, commandOutput)
         saveJsonXz(commandOutput, output_fullpath)
         if (run_counter >= args.num_runs):    # are we done?
@@ -110,3 +117,4 @@ if __name__ == '__main__':
             time.sleep(args.time_interval)
 
 exit(0)
+
