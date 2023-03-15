@@ -54,6 +54,7 @@ def runCommands(cmdTable) -> dict:
     procHandles = {}
     for cmd in cmdTable.keys():
         try:
+            # print(cmd)
             procHandles[cmd] = subprocess.Popen(cmdTable[cmd], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         except FileNotFoundError:
             log.debug(f"process handle {cmd} could not execute --  likely because fixed vs. distributed")
@@ -80,14 +81,14 @@ loopCmdTable = {
     "showPolMapInt": ["qos_ma_show_stats", "-i", "Bundle-Ether21", "-p", "0x1", "-q", "0x2",]
 }
 
-for card in range(18):
-    for npu_inst in range(4):
+for card in [0,11]:
+    for npu_inst in range(3):
             # create commands to clear the counters (we run this once at the beginning)
         clrNpuCmd = ["npd_npu_driver_clear", "-c", "s", "-i", f"0x{str(npu_inst)}", "-n", f"{str(256*card)}"]
         runOnceCmdTable[f"clear_command_{card}_{npu_inst}"] = clrNpuCmd
             # build the show command for each (LC, NPU) tuple
         npuStats = ["ofa_npu_stats_show", "-v", "a", "-t", "e", "-p", "0xffffffff", "-s", "0x0", "-d", "A",]
-        npuStats.append(["-i", f"0x{str(npu_inst)}", "-n", f"{str(256*card)}"])
+        npuStats = npuStats + ["-i", f"0x{str(npu_inst)}", "-n", f"{str(256*card)}"]
         read_dvoq = ["npu_driver_show", "-c", "script read_dvoq_qsm", "-u", f"0x{npu_inst}", "-n", f"{str(256*card)}",]
         oq_debug = ["npu_driver_show", "-c", "script sf_oq_debug_full true", "-u", f"0x{npu_inst}", "-n", f"{str(256*card)}",]
         summ_ctrs = ["npu_driver_show", "-c", "script print_get_counters true", "-u", f"0x{npu_inst}", "-n", f"{str(256*card)}",]
@@ -103,12 +104,12 @@ for card in range(18):
 if __name__ == '__main__':
     os.nice(20)
     args = getParser()
-    ClearCommandOutput = runCommands(runOnceCmdTable)   # run once
+    commandOutput = runCommands(runOnceCmdTable)   # run once
     run_counter = 0
     finished = False
     while not finished:         # run main loop of commands
         run_counter += 1
-        commandOutput = runCommands(loopCmdTable)       
+        commandOutput.update(runCommands(loopCmdTable))       
         output_fullpath = getOutputfile(args, commandOutput)
         saveJsonXz(commandOutput, output_fullpath)
         if (run_counter >= args.num_runs):    # are we done?
