@@ -35,7 +35,7 @@ def getOutputfile(args, commandOutput):
 def saveJsonXz(cmdOutput: dict, filename: str) -> None:
     with lzma.open(filename, "wt", encoding='utf-8') as outfile:
         log.info(f"json.dump-ing compressed JSON output to {filename}.")
-        json.dump(cmdOutput, outfile)
+        json.dump(cmdOutput, outfile, indent=4)
 
 def getParser():
     parser = argparse.ArgumentParser()
@@ -54,13 +54,12 @@ def runCommands(cmdTable) -> dict:
     procHandles = {}
     for cmd in cmdTable.keys():
         try:
-            # print(cmd)
-            procHandles[cmd] = subprocess.Popen(cmdTable[cmd], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            procHandles[cmd] = subprocess.Popen(cmdTable[cmd], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         except FileNotFoundError:
             log.debug(f"process handle {cmd} could not execute --  likely because fixed vs. distributed")
     for handle, proc in procHandles.items():
         try:
-            procOutput[handle] = proc.communicate(timeout=180)[0].decode("utf-8")  # turn stdout portion into text
+            procOutput[handle] = proc.communicate(timeout=180)[0]  # turn stdout portion into text
         except subprocess.TimeoutExpired:
             proc.kill()
             raise TimeoutError(f"killed process with handle '{handle}' : timed out")
@@ -75,13 +74,24 @@ runOnceCmdTable = {
     "showNpuSlice": ["show_slicemgr", "-I", "0xff", "-n", "A"],   # XR: show contr npu slice info...
 }
 
-# will run these each time
-loopCmdTable = {    
+loopCmdTable = {                # will run these each time
     "timestamp": ["date", "+%s"],           # XR: "show clock"
     "showPolMapInt": ["qos_ma_show_stats", "-i", "Bundle-Ether21", "-p", "0x1", "-q", "0x2",]
 }
 
+# build the command strings to show voq state for the bundle members we're interested in...  "TenGigE0_11_0_x_y"
+bundlemembers = []
+for m_port in ['2', '3', '4']:
+    for m_breakout in ['0', '1', '2', '3']:
+        bundlemembers.append(f"TenGigE0_11_0_{m_port}_{m_breakout}")
+
+# add the member voq commands to the table of commands to run
 for card in [0,11]:
+    for member in bundlemembers:
+        voq_ingress_stats = ["ofa_npu_stats_show", "-v", "a", "-i", "0x10", "-n", "0", "-t", "s", "-p", f"{member}",]
+        voq_ingress_stats += ["-s", "0x0", "-d", "0x0", "-T", "0x0", "-P", "0xffffffff", "-c", "0xff",]
+        loopCmdTable[f"voqs_member{member}"] = voq_ingress_stats
+
     for npu_inst in range(3):
             # create commands to clear the counters (we run this once at the beginning)
         clrNpuCmd = ["npd_npu_driver_clear", "-c", "s", "-i", f"0x{str(npu_inst)}", "-n", f"{str(256*card)}"]
@@ -97,8 +107,6 @@ for card in [0,11]:
         loopCmdTable[f"dvoq_check{card}_{npu_inst}"] = read_dvoq
         loopCmdTable[f"oq_debug_full{card}_{npu_inst}"] = oq_debug
         loopCmdTable[f"summ_ctrs{card}_{npu_inst}"] = summ_ctrs
-
-
 
 
 if __name__ == '__main__':
